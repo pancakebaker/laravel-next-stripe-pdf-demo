@@ -3,21 +3,37 @@
 import { useEffect, useMemo, useState } from "react";
 import { Elements } from "@stripe/react-stripe-js";
 import { loadStripe, Stripe } from "@stripe/stripe-js";
-import { createPaymentIntent } from "./api";
+import { createPaymentIntent, getInvoice, InvoiceResource } from "./api";
 import StripeElementsForm from "./StripeElementsForm";
 
 const stripePromise: Promise<Stripe | null> = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
 );
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE!;
+function formatMoney(amount: number, currency: string) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: currency.toUpperCase(),
+  }).format(amount / 100);
+}
+
+function statusLabel(status: string) {
+  const labels: Record<string, string> = {
+    requires_payment: "Awaiting payment",
+    paid: "Paid",
+    payment_failed: "Payment failed",
+    canceled: "Canceled",
+  };
+
+  return labels[status] ?? status.replaceAll("_", " ");
+}
 
 export default function CheckoutClient({ invoiceId }: { invoiceId: string }) {
   const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
+  const [invoice, setInvoice] = useState<InvoiceResource | null>(null);
+  const [stripeStatus, setStripeStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  
-  // OPTIONAL: if you want to only show PDF link after paid
-  const [paid, setPaid] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -32,7 +48,11 @@ export default function CheckoutClient({ invoiceId }: { invoiceId: string }) {
           userId: 123,
           idempotencyKey: crypto.randomUUID(),
         });
-        if (active) setClientSecret(res.clientSecret);
+
+        if (!active) return;
+        setClientSecret(res.clientSecret);
+        setPaymentIntentId(res.paymentIntentId);
+        setInvoice(res.invoice);
       } catch (e: unknown) {
         if (!active) return;
         setError(e instanceof Error ? e.message : "Failed to initialize payment");
@@ -44,81 +64,198 @@ export default function CheckoutClient({ invoiceId }: { invoiceId: string }) {
     };
   }, [invoiceId]);
 
+  useEffect(() => {
+    if (!invoice?.accessToken || invoice.status === "paid") return;
+
+    const interval = window.setInterval(async () => {
+      try {
+        const fresh = await getInvoice(invoice.id, invoice.accessToken);
+        setInvoice(fresh);
+      } catch {
+        // Keep the current invoice state visible while the next poll retries.
+      }
+    }, 3000);
+
+    return () => window.clearInterval(interval);
+  }, [invoice?.accessToken, invoice?.id, invoice?.status]);
+
   const options = useMemo(() => {
     if (!clientSecret) return undefined;
     return {
       clientSecret,
-      appearance: { theme: "stripe" as const },
+      appearance: {
+        theme: "stripe" as const,
+        variables: {
+          borderRadius: "8px",
+          colorPrimary: "#0f172a",
+        },
+      },
     };
   }, [clientSecret]);
 
-  const pdfUrl = `${API_BASE}/api/invoices/${invoiceId}/pdf`;
+  const amountLabel = invoice
+    ? formatMoney(invoice.totalAmount, invoice.currency)
+    : "$5.00";
+  const paid = invoice?.status === "paid";
 
   return (
-    <div className="space-y-4">
-      <header className="space-y-1">
-        <div className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">
-          Demo Checkout
+    <div className="mx-auto grid w-full max-w-5xl gap-6 lg:grid-cols-[1fr_360px]">
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="mb-3 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+              Webhook verified checkout
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-950">
+              Secure invoice payment
+            </h1>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">
+              Pay a server-priced invoice with Stripe Elements. The invoice PDF unlocks only after Laravel receives a signed Stripe webhook.
+            </p>
+          </div>
+          <div className="rounded-lg border border-slate-200 px-3 py-2 text-right">
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Invoice
+            </div>
+            <div className="font-mono text-sm font-semibold text-slate-900">
+              {invoiceId}
+            </div>
+          </div>
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-          Checkout
-        </h1>
-        <p className="text-sm text-slate-600">
-          Pay <span className="font-semibold">$5.00</span> using Stripe Payment Element.
-        </p>
-        <p className="text-xs text-slate-500">
-          Invoice ID: <span className="font-mono">{invoiceId}</span>
-        </p>
-      </header>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         {!clientSecret && !error && (
-          <div className="space-y-2">
-            <div className="h-5 w-32 animate-pulse rounded bg-slate-200" />
-            <div className="h-10 w-full animate-pulse rounded bg-slate-200" />
-            <div className="h-10 w-full animate-pulse rounded bg-slate-200" />
-            <div className="h-11 w-full animate-pulse rounded bg-slate-200" />
-            <p className="text-xs text-slate-500">Preparing secure payment…</p>
+          <div className="space-y-3">
+            <div className="h-10 w-full animate-pulse rounded-lg bg-slate-100" />
+            <div className="h-28 w-full animate-pulse rounded-lg bg-slate-100" />
+            <div className="h-12 w-full animate-pulse rounded-lg bg-slate-100" />
           </div>
         )}
 
         {error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
             {error}
           </div>
         )}
 
-        {clientSecret && options && (
+        {clientSecret && options && invoice && (
           <Elements stripe={stripePromise} options={options}>
             <StripeElementsForm
-              invoiceId={invoiceId}
-              onPaid={() => setPaid(true)}
+              invoiceId={invoice.id}
+              accessToken={invoice.accessToken}
+              amountLabel={amountLabel}
+              onPaymentResult={(id, status) => {
+                setPaymentIntentId(id);
+                setStripeStatus(status);
+              }}
             />
           </Elements>
         )}
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="text-sm font-semibold text-slate-900">Invoice PDF</div>
-        <p className="mt-1 text-sm text-slate-600">
-          {paid
-            ? "Payment confirmed — download your invoice."
-            : "You can preview the invoice. In production, you'd usually allow download only after payment."}
-        </p>
+      <aside className="space-y-4">
+        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Order summary
+              </h2>
+              <p className="mt-1 text-2xl font-bold text-slate-950">
+                {amountLabel}
+              </p>
+            </div>
+            <div
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                paid
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-amber-50 text-amber-700"
+              }`}
+            >
+              {statusLabel(invoice?.status ?? "requires_payment")}
+            </div>
+          </div>
 
-        <a
-          href={pdfUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 active:translate-y-px"
-        >
-          {paid ? "Download invoice PDF" : "Preview invoice PDF"}
-        </a>
-      </section>
+          <div className="mt-5 space-y-3">
+            {(invoice?.items ?? []).map((item) => (
+              <div
+                key={item.description}
+                className="flex items-start justify-between gap-4 border-t border-slate-100 pt-3 text-sm"
+              >
+                <div>
+                  <div className="font-medium text-slate-900">
+                    {item.description}
+                  </div>
+                  <div className="text-slate-500">Qty {item.quantity}</div>
+                </div>
+                <div className="font-semibold text-slate-900">
+                  {formatMoney(item.subtotalAmount, invoice?.currency ?? "usd")}
+                </div>
+              </div>
+            ))}
+          </div>
 
-      <p className="text-center text-xs text-slate-500">
-        Mobile-first layout • Thumb-friendly controls • Stripe Elements (PCI-safe)
-      </p>
+          <div className="mt-5 border-t border-slate-200 pt-4">
+            <div className="flex justify-between text-sm text-slate-600">
+              <span>Subtotal</span>
+              <span>{amountLabel}</span>
+            </div>
+            <div className="mt-2 flex justify-between text-base font-bold text-slate-950">
+              <span>Total</span>
+              <span>{amountLabel}</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+            Invoice PDF
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            {paid
+              ? "Webhook received. Your protected PDF is ready."
+              : "Locked until the signed Stripe webhook marks this invoice paid."}
+          </p>
+          {invoice?.pdfUrl ? (
+            <a
+              href={invoice.pdfUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-4 inline-flex h-11 w-full items-center justify-center rounded-lg border border-slate-950 bg-white px-4 text-sm font-semibold text-slate-950 transition hover:bg-slate-50"
+            >
+              Download invoice
+            </a>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="mt-4 inline-flex h-11 w-full cursor-not-allowed items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-400"
+            >
+              Waiting for webhook
+            </button>
+          )}
+        </section>
+
+        <section className="rounded-lg border border-slate-200 bg-white p-5 text-sm shadow-sm">
+          <div className="font-semibold text-slate-900">Payment trace</div>
+          <dl className="mt-3 space-y-2 text-slate-600">
+            <div className="flex justify-between gap-3">
+              <dt>Stripe status</dt>
+              <dd className="font-medium text-slate-900">{stripeStatus ?? "Not submitted"}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt>PaymentIntent</dt>
+              <dd className="max-w-[180px] truncate font-mono text-xs text-slate-900">
+                {paymentIntentId ?? "Pending"}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt>Laravel invoice</dt>
+              <dd className="font-medium text-slate-900">
+                {statusLabel(invoice?.status ?? "requires_payment")}
+              </dd>
+            </div>
+          </dl>
+        </section>
+      </aside>
     </div>
   );
 }

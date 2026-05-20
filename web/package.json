@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\"",
+    "dev": "npm run clean && next dev --turbopack",
+    "dev:https": "npm run clean && next dev --turbopack --hostname laravel-next-stripe-pdf-demo.local --port 443 --experimental-https",
+    "dev:local": "npm run clean && next dev --turbopack --hostname laravel-next-stripe-pdf-demo.local --port 3000 --experimental-https",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
