@@ -1,7 +1,17 @@
 import { expect, test } from "@playwright/test";
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve;
+  });
+
+  return { promise, resolve };
+}
+
 test("checkout locks and unlocks the protected invoice PDF by invoice status", async ({ page }) => {
-  let invoiceReads = 0;
+  const invoiceRefresh = deferred<void>();
+  let invoiceRefreshRequested = false;
 
   await page.route("**/api/payments/create-intent", async (route) => {
     const request = route.request();
@@ -37,7 +47,8 @@ test("checkout locks and unlocks the protected invoice PDF by invoice status", a
   });
 
   await page.route("**/api/invoices/*", async (route) => {
-    invoiceReads += 1;
+    invoiceRefreshRequested = true;
+    await invoiceRefresh.promise;
 
     await route.fulfill({
       status: 200,
@@ -45,16 +56,13 @@ test("checkout locks and unlocks the protected invoice PDF by invoice status", a
       headers: { "Cache-Control": "no-store" },
       body: JSON.stringify({
         id: "INV-CI",
-        status: invoiceReads > 1 ? "paid" : "requires_payment",
+        status: "paid",
         customerName: "Demo Buyer",
         currency: "usd",
         totalAmount: 500,
-        paidAt: invoiceReads > 1 ? "2026-05-20T00:00:00Z" : null,
+        paidAt: "2026-05-20T00:00:00Z",
         accessToken: "ci-access-token",
-        pdfUrl:
-          invoiceReads > 1
-            ? "http://127.0.0.1:3100/api/invoices/INV-CI/pdf?token=ci-access-token"
-            : null,
+        pdfUrl: "http://127.0.0.1:3100/api/invoices/INV-CI/pdf?token=ci-access-token",
         items: [
           {
             description: "Stripe checkout and protected PDF demo",
@@ -76,7 +84,9 @@ test("checkout locks and unlocks the protected invoice PDF by invoice status", a
   await expect(page.getByTestId("invoice-status")).toHaveText("Awaiting payment");
   await expect(page.getByTestId("locked-invoice")).toBeVisible();
 
-  await expect.poll(() => invoiceReads, { timeout: 12_000 }).toBeGreaterThan(1);
+  await expect.poll(() => invoiceRefreshRequested, { timeout: 12_000 }).toBe(true);
+  invoiceRefresh.resolve();
+
   await expect(page.getByTestId("invoice-status")).toHaveText("Paid", { timeout: 12_000 });
   await expect(page.getByTestId("download-invoice")).toBeVisible();
   await expect(page.getByTestId("download-invoice")).toHaveAttribute("href", /token=ci-access-token/);
