@@ -66,5 +66,6 @@ jobs:
       - name: Run E2E tests
         env:
           NEXT_PUBLIC_API_BASE: ""
+          NEXT_PUBLIC_E2E: "true"
           NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: pk_test_ci_placeholder
         run: npm run test:e2e

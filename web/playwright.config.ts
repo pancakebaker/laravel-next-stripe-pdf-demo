@@ -22,6 +22,7 @@ export default defineConfig({
     timeout: 120_000,
     env: {
       NEXT_PUBLIC_API_BASE: "",
+      NEXT_PUBLIC_E2E: "true",
       NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test_ci_placeholder",
     },
   },

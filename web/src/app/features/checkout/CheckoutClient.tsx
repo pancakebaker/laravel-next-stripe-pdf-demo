@@ -6,9 +6,10 @@ import { loadStripe, Stripe } from "@stripe/stripe-js";
 import { createPaymentIntent, getInvoice, InvoiceResource } from "./api";
 import StripeElementsForm from "./StripeElementsForm";
 
-const stripePromise: Promise<Stripe | null> = loadStripe(
-  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
-);
+const isE2E = process.env.NEXT_PUBLIC_E2E === "true";
+const stripePromise: Promise<Stripe | null> = isE2E
+  ? Promise.resolve(null)
+  : loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
 
 function formatMoney(amount: number, currency: string) {
   return new Intl.NumberFormat("en-US", {
@@ -152,17 +153,26 @@ export default function CheckoutClient({ invoiceId }: { invoiceId: string }) {
         )}
 
         {clientSecret && options && invoice && (
-          <Elements stripe={stripePromise} options={options}>
-            <StripeElementsForm
-              invoiceId={invoice.id}
-              accessToken={invoice.accessToken}
-              amountLabel={amountLabel}
-              onPaymentResult={(id, status) => {
-                setPaymentIntentId(id);
-                setStripeStatus(status);
-              }}
-            />
-          </Elements>
+          isE2E ? (
+            <div
+              data-testid="payment-form-ready"
+              className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-medium text-slate-700"
+            >
+              Payment form ready
+            </div>
+          ) : (
+            <Elements stripe={stripePromise} options={options}>
+              <StripeElementsForm
+                invoiceId={invoice.id}
+                accessToken={invoice.accessToken}
+                amountLabel={amountLabel}
+                onPaymentResult={(id, status) => {
+                  setPaymentIntentId(id);
+                  setStripeStatus(status);
+                }}
+              />
+            </Elements>
+          )
         )}
       </section>
 

@@ -81,6 +81,7 @@ test("checkout locks and unlocks the protected invoice PDF by invoice status", a
   await expect(page.getByText("Webhook verified checkout")).toBeVisible();
   await expect(page.getByText("$5.00").first()).toBeVisible();
   await expect(page.getByText("Stripe checkout and protected PDF demo")).toBeVisible();
+  await expect(page.getByTestId("payment-form-ready")).toBeVisible();
   await expect(page.getByTestId("invoice-status")).toHaveText("Awaiting payment");
   await expect(page.getByTestId("locked-invoice")).toBeVisible();
 
