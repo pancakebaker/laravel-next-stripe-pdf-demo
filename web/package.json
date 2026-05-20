@@ -7,8 +7,10 @@
     "dev": "npm run clean && next dev --turbopack",
     "dev:https": "npm run clean && next dev --turbopack --hostname laravel-next-stripe-pdf-demo.local --port 443 --experimental-https",
     "dev:local": "npm run clean && next dev --turbopack --hostname laravel-next-stripe-pdf-demo.local --port 3000 --experimental-https",
+    "dev:e2e": "npm run clean && next dev --turbopack --hostname 127.0.0.1 --port 3100",
     "build": "next build",
     "start": "next start",
+    "test:e2e": "playwright test",
     "lint": "next lint"
   },
   "dependencies": {
@@ -21,8 +23,10 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/cli": "^4.1.18",
     "@tailwindcss/postcss": "^4.1.18",
+    "@playwright/test": "^1.57.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

@@ -43,7 +43,8 @@ export async function createPaymentIntent(input: {
 
 export async function getInvoice(invoiceId: string, accessToken: string) {
   const { data } = await axios.get(`${API_BASE}/api/invoices/${invoiceId}`, {
-    params: { token: accessToken },
+    headers: { "Cache-Control": "no-cache" },
+    params: { token: accessToken, t: Date.now() },
   });
 
   return data as InvoiceResource;

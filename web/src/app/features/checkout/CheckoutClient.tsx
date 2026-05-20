@@ -67,16 +67,27 @@ export default function CheckoutClient({ invoiceId }: { invoiceId: string }) {
   useEffect(() => {
     if (!invoice?.accessToken || invoice.status === "paid") return;
 
-    const interval = window.setInterval(async () => {
+    let active = true;
+    const invoiceId = invoice.id;
+    const accessToken = invoice.accessToken;
+
+    async function refreshInvoice() {
       try {
-        const fresh = await getInvoice(invoice.id, invoice.accessToken);
+        const fresh = await getInvoice(invoiceId, accessToken);
+        if (!active) return;
         setInvoice(fresh);
       } catch {
         // Keep the current invoice state visible while the next poll retries.
       }
-    }, 3000);
+    }
 
-    return () => window.clearInterval(interval);
+    refreshInvoice();
+    const interval = window.setInterval(refreshInvoice, 3000);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
   }, [invoice?.accessToken, invoice?.id, invoice?.status]);
 
   const options = useMemo(() => {
@@ -100,7 +111,10 @@ export default function CheckoutClient({ invoiceId }: { invoiceId: string }) {
 
   return (
     <div className="mx-auto grid w-full max-w-5xl gap-6 lg:grid-cols-[1fr_360px]">
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <section
+        className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
+        data-testid="checkout-panel"
+      >
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="mb-3 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
@@ -164,6 +178,7 @@ export default function CheckoutClient({ invoiceId }: { invoiceId: string }) {
               </p>
             </div>
             <div
+              data-testid="invoice-status"
               className={`rounded-full px-3 py-1 text-xs font-semibold ${
                 paid
                   ? "bg-emerald-50 text-emerald-700"
@@ -216,6 +231,7 @@ export default function CheckoutClient({ invoiceId }: { invoiceId: string }) {
           </p>
           {invoice?.pdfUrl ? (
             <a
+              data-testid="download-invoice"
               href={invoice.pdfUrl}
               target="_blank"
               rel="noreferrer"
@@ -225,6 +241,7 @@ export default function CheckoutClient({ invoiceId }: { invoiceId: string }) {
             </a>
           ) : (
             <button
+              data-testid="locked-invoice"
               type="button"
               disabled
               className="mt-4 inline-flex h-11 w-full cursor-not-allowed items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-400"
